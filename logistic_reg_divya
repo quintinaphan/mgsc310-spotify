@@ -1,0 +1,51 @@
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_curve, auc
+import matplotlib.pyplot as plt
+
+# Load the dataset
+data = pd.read_csv("datasets/spotify_most_streamed_songs.csv")
+
+# Convert streams to numeric and handle missing values
+data['streams'] = data['streams'].str.replace(",", "").astype(float)
+data = data.dropna()
+
+# Create the target variable
+median_streams = data['streams'].median()
+data['highly_streamed'] = (data['streams'] > median_streams).astype(int)
+
+# Select features and target
+features = [
+    'danceability_.', 'valence_.', 'energy_.', 'acousticness_.', 'instrumentalness_.',
+    'liveness_.', 'speechiness_.', 'bpm', 'released_year', 'released_month', 'released_day'
+]
+X = data[features]
+y = data['highly_streamed']
+
+# Split the data into train and test sets
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=123)
+
+# Fit the logistic regression model
+logistic_model = LogisticRegression(max_iter=1000)
+logistic_model.fit(X_train, y_train)
+
+# Predict probabilities on the test set
+y_pred_prob = logistic_model.predict_proba(X_test)[:, 1]
+
+# Compute ROC curve and AUC
+fpr, tpr, thresholds = roc_curve(y_test, y_pred_prob)
+roc_auc = auc(fpr, tpr)
+
+# Plot the ROC curve
+plt.figure()
+plt.plot(fpr, tpr, color='blue', lw=2, label=f"ROC curve (AUC = {roc_auc:.2f})")
+plt.plot([0, 1], [0, 1], color='red', linestyle='--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve for Logistic Regression')
+plt.legend(loc="lower right")
+plt.show()
+
+print(f"AUC (Area Under the Curve): {roc_auc:.2f}")
