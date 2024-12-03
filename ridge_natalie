@@ -1,0 +1,107 @@
+library(dplyr)
+library(glmnet)
+library(caret)
+library(glmnetUtils)
+
+spotify_data_clean <- spotify_data %>%
+  drop_na() %>%
+  mutate(
+    streams = as.numeric(gsub("[^0-9]", "", streams)), 
+    streams = log1p(streams), 
+    danceability_ = `danceability_.` / 100,
+    valence_ = `valence_.` / 100,
+    energy_ = `energy_.` / 100,
+    acousticness_ = `acousticness_.` / 100,
+    instrumentalness_ = `instrumentalness_.` / 100,
+    liveness_ = `liveness_.` / 100,
+    speechiness_ = `speechiness_.` / 100,
+    bpm = as.numeric(bpm),
+    bpm_scaled = scale(bpm)  # Scale bpm
+  ) %>%
+
+  mutate(
+    danceability_energy = danceability_ * energy_,
+    acousticness_instrumentalness = acousticness_ * instrumentalness_,
+    bpm_squared = bpm_scaled^2,
+    danceability_squared = danceability_^2
+  ) %>%
+  select(
+    streams, danceability_, valence_, energy_, acousticness_,
+    instrumentalness_, liveness_, speechiness_, bpm_scaled,
+    danceability_energy, acousticness_instrumentalness, bpm_squared,
+    danceability_squared
+  )
+
+
+set.seed(123)
+train_index <- createDataPartition(spotify_data_clean$streams, p = 0.8, list = FALSE)
+train_data <- spotify_data_clean[train_index, ]
+test_data <- spotify_data_clean[-train_index, ]
+
+
+feature_model <- train(
+  streams ~ .,
+  data = train_data,
+  method = "glmStepAIC",
+  trControl = trainControl(method = "cv", number = 5),
+  direction = "backward"
+)
+
+
+selected_features <- as.formula(feature_model$finalModel$formula)
+cat("Selected Features:\n", selected_features, "\n")
+
+ridge_mod <- cv.glmnet(
+  selected_features,
+  data = train_data,
+  alpha = 0,  # Ridge regression
+  nfolds = 5
+)
+
+
+cat("Lambda.min (minimizing MSE):", ridge_mod$lambda.min, "\n")
+cat("Lambda.1se (simpler model):", ridge_mod$lambda.1se, "\n")
+
+# Coefficients at lambda.min
+cat("Coefficients at Lambda.min:\n")
+ridge_coefs_min <- coef(ridge_mod, s = ridge_mod$lambda.min)
+print(round(ridge_coefs_min, 3))
+
+# Coefficients at lambda.1se
+cat("Coefficients at Lambda.1se:\n")
+ridge_coefs_1se <- coef(ridge_mod, s = ridge_mod$lambda.1se)
+print(round(ridge_coefs_1se, 3))
+
+
+train_predictions <- predict(ridge_mod, newdata = train_data, s = ridge_mod$lambda.min)
+test_predictions <- predict(ridge_mod, newdata = test_data, s = ridge_mod$lambda.min)
+
+
+train_rsq <- cor(train_predictions, train_data$streams)^2
+test_rsq <- cor(test_predictions, test_data$streams)^2
+
+cat("Train R-squared:", train_rsq, "\n")
+cat("Test R-squared:", test_rsq, "\n")
+
+# MSE Path
+plot(ridge_mod)
+title("MSE Path for Ridge Regression")
+
+# Coefficient Shrinkage Path
+library('coefplot')
+coefpath(ridge_mod)
+
+plot(ridge_mod$cvm, type = "b", main = "Cross-Validation MSE Across Lambda")
+abline(v = which.min(ridge_mod$cvm), col = "red", lty = 2)
+title("Optimal Lambda Selection")
+
+plot(ridge_mod$lambda, ridge_mod$cvm, type = "b", 
+     xlab = "Lambda", 
+     ylab = "Mean Squared Error (MSE)", 
+     main = "Cross-Validation MSE Across Lambda")
+
+# Add a vertical line at lambda.min
+abline(v = ridge_mod$lambda.min, col = "red", lty = 2)
+
+
+text(ridge_mod$lambda.min, min(ridge_mod$cvm), 
