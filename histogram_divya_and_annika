@@ -1,0 +1,17 @@
+library(ggplot2)
+
+
+data <- read.csv("datasets/spotify_most_streamed_songs.csv")
+
+
+data$streams <- as.numeric(gsub(",", "", data$streams))  # Remove commas if present
+data <- na.omit(data)
+
+
+ggplot(data, aes(x = streams)) +
+  geom_histogram(binwidth = 500000000, fill = "skyblue", color = "black", alpha = 0.7) +
+  scale_x_continuous(labels = scales::comma) +  
+  labs(title = "Distribution of Spotify Song Streams",
+       x = "Streams (in billions)",
+       y = "Frequency") +
+  theme_minimal()
